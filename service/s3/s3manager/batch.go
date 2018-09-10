@@ -260,9 +260,17 @@ func NewBatchDelete(c client.ConfigProvider, options ...func(*BatchDelete)) *Bat
 // BatchDeleteObject is a wrapper object for calling the batch delete operation.
 type BatchDeleteObject struct {
 	Object *s3.DeleteObjectInput
+
+	// Before will run before each iteration during the batch process.
+	Before func() error
 	// After will run after each iteration during the batch process. This function will
 	// be executed whether or not the request was successful.
 	After func() error
+
+	// OnFailure will run in the event an error is encountered during the batch process
+	OnFailure func() error
+	// OnSuccess will only run if no error is encountered during the batch process
+	OnSuccess func() error
 }
 
 // DeleteObjectsIterator is an interface that uses the scanner pattern to iterate
@@ -445,9 +453,17 @@ type BatchDownloadIterator interface {
 type BatchDownloadObject struct {
 	Object *s3.GetObjectInput
 	Writer io.WriterAt
+
+	// Before will run before each iteration during the batch process.
+	Before func() error
 	// After will run after each iteration during the batch process. This function will
 	// be executed whether or not the request was successful.
 	After func() error
+
+	// OnFailure will run in the event an error is encountered during the batch process
+	OnFailure func() error
+	// OnSuccess will only run if no error is encountered during the batch process
+	OnSuccess func() error
 }
 
 // DownloadObjectsIterator implements the BatchDownloadIterator interface and allows for batched
@@ -523,7 +539,15 @@ func (batcher *UploadObjectsIterator) UploadObject() BatchUploadObject {
 // BatchUploadObject contains all necessary information to run a batch operation once.
 type BatchUploadObject struct {
 	Object *UploadInput
+
+	// Before will run before each iteration during the batch process.
+	Before func() error
 	// After will run after each iteration during the batch process. This function will
 	// be executed whether or not the request was successful.
 	After func() error
+
+	// OnFailure will run in the event an error is encountered during the batch process
+	OnFailure func() error
+	// OnSuccess will only run if no error is encountered during the batch process
+	OnSuccess func() error
 }
