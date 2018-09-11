@@ -381,6 +381,45 @@ func (u Uploader) UploadWithContext(ctx aws.Context, input *UploadInput, opts ..
 	return i.upload()
 }
 
+func (u Uploader) uploadWithIterator(ctx aws.Context, object BatchUploadObject, opts ...func(*Uploader)) []Error {
+	var errs []Error
+	if object.Before != nil {
+		if err := object.Before(); err != nil {
+			s3Err := Error{
+				OrigErr: err,
+				Bucket:  object.Object.Bucket,
+				Key:     object.Object.Key,
+			}
+
+			errs = append(errs, s3Err)
+		}
+	}
+
+	if _, err := u.UploadWithContext(ctx, object.Object, opts...); err != nil {
+		s3Err := Error{
+			OrigErr: err,
+			Bucket:  object.Object.Bucket,
+			Key:     object.Object.Key,
+		}
+
+		errs = append(errs, s3Err)
+	}
+
+	if object.After != nil {
+		if err := object.After(); err != nil {
+			s3Err := Error{
+				OrigErr: err,
+				Bucket:  object.Object.Bucket,
+				Key:     object.Object.Key,
+			}
+
+			errs = append(errs, s3Err)
+		}
+	}
+
+	return nil
+}
+
 // UploadWithIterator will upload a batched amount of objects to S3. This operation uses
 // the iterator pattern to know which object to upload next. Since this is an interface this
 // allows for custom defined functionality.
@@ -404,35 +443,45 @@ func (u Uploader) UploadWithContext(ctx aws.Context, input *UploadInput, opts ..
 func (u Uploader) UploadWithIterator(ctx aws.Context, iter BatchUploadIterator, opts ...func(*Uploader)) error {
 	var errs []Error
 	for iter.Next() {
+
 		object := iter.UploadObject()
-		if _, err := u.UploadWithContext(ctx, object.Object, opts...); err != nil {
-			s3Err := Error{
-				OrigErr: err,
-				Bucket:  object.Object.Bucket,
-				Key:     object.Object.Key,
+		objectErrs := u.uploadWithIterator(ctx, object, opts...)
+
+		if object.OnSuccess != nil {
+			if len(objectErrs) == 0 {
+				if err := object.OnSuccess(); err != nil {
+					s3Err := Error{
+						OrigErr: err,
+						Bucket:  object.Object.Bucket,
+						Key:     object.Object.Key,
+					}
+
+					objectErrs = append(objectErrs, s3Err)
+				}
 			}
-
-			errs = append(errs, s3Err)
 		}
 
-		if object.After == nil {
-			continue
-		}
+		if object.OnFailure != nil {
+			if len(objectErrs) > 0 {
+				if err := object.OnFailure(); err != nil {
+					s3Err := Error{
+						OrigErr: err,
+						Bucket:  object.Object.Bucket,
+						Key:     object.Object.Key,
+					}
 
-		if err := object.After(); err != nil {
-			s3Err := Error{
-				OrigErr: err,
-				Bucket:  object.Object.Bucket,
-				Key:     object.Object.Key,
+					objectErrs = append(objectErrs, s3Err)
+				}
 			}
-
-			errs = append(errs, s3Err)
 		}
+
+		errs = append(errs, objectErrs...)
 	}
 
 	if len(errs) > 0 {
 		return NewBatchError("BatchedUploadIncomplete", "some objects have failed to upload.", errs)
 	}
+
 	return nil
 }
 
